@@ -521,6 +521,8 @@ function processRoads(elements, restoredExcludedIds = new Set(), restoredDoneMap
     applyRoadStyle(road);
     bindTooltip(road);
     layer.on('click', () => handleRoadClick(road));
+    layer.on('mouseover', () => layer.setStyle({ weight: 6, opacity: 1 }));
+    layer.on('mouseout',  () => applyRoadStyle(road));
     roadsData.push(road);
 
     if (enabledTypes.has(type)) roadsLayer.addLayer(layer);
@@ -556,7 +558,7 @@ function applyRoadStyle(road) {
   if (road.excluded) {
     road.layer.setStyle({ color: '#2a2a2a', opacity: 0.6, dashArray: '5 5', weight: 2 });
   } else if (road.done) {
-    road.layer.setStyle({ color: '#27ae60', opacity: 0.65, dashArray: null, weight: 3 });
+    road.layer.setStyle({ color: cfg ? cfg.color : '#888', opacity: 0.25, dashArray: null, weight: 2 });
   } else {
     road.layer.setStyle({
       color: cfg ? cfg.color : '#888',
@@ -569,12 +571,16 @@ function applyRoadStyle(road) {
 
 function bindTooltip(road) {
   road.layer.unbindTooltip();
-  const namePart = road.name ? `<strong>${road.name}</strong> ` : '';
-  const typePart = `<em>${road.type}</em>`;
+  const name = road.name || 'Unnamed';
+  const type = road.type.replace('_', ' ');
+  const dist = `${road.lengthMi.toFixed(2)} mi`;
   const donePart = road.done && road.doneAt
-    ? `<br><span style="color:#27ae60">✓ Done ${formatDate(road.doneAt)}</span>`
+    ? ` · <span style="color:#27ae60">✓ ${formatDate(road.doneAt)}</span>`
     : '';
-  road.layer.bindTooltip(`${namePart}${typePart}${donePart}`, { sticky: true, opacity: 0.92 });
+  road.layer.bindTooltip(
+    `<strong>${name}</strong> · ${type} · ${dist}${donePart}`,
+    { sticky: true, opacity: 0.95 },
+  );
 }
 
 function formatDate(isoString) {

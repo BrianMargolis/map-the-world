@@ -70,12 +70,47 @@
       letter-spacing: 0.1em;
       margin-top: 4px;
     }
+    .mileage-stats {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-done  { color: #27ae60; }
+    .stat-sep   { color: #2a2a3e; }
+    .stat-total { color: #445; }
     .mileage-excluded {
       font-size: 0.7rem;
-      color: #445;
-      margin-top: 6px;
+      color: #3a3a4e;
+      margin-top: 4px;
     }
-    .mileage-excluded span { color: #666; }
+
+    /* mode toggle */
+    .mode-toggle {
+      display: flex;
+      background: #0d0d1a;
+      border: 1px solid #252535;
+      border-radius: 6px;
+      padding: 3px;
+      gap: 3px;
+    }
+    .mode-btn {
+      flex: 1;
+      padding: 7px 6px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: #445;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .mode-btn.active         { background: #1a1a2e; color: #aaa; }
+    .mode-btn.active.done    { color: #27ae60; }
+    .mode-btn.active.exclude { color: #e05555; }
 
     /* section label */
     .section-label {
@@ -176,10 +211,7 @@
       transition: border-color 0.15s, color 0.15s;
       display: block;
     }
-    .btn-secondary:hover {
-      border-color: #404055;
-      color: #99a;
-    }
+    .btn-secondary:hover { border-color: #404055; color: #99a; }
 
     /* instructions */
     .instructions {
@@ -221,11 +253,24 @@
 
   <div class="sidebar-section">
     <div class="mileage-box">
-      <div class="mileage-value" id="total-miles">—</div>
-      <div class="mileage-unit">total miles</div>
-      <div class="mileage-excluded" id="excluded-info" style="display:none">
-        + <span id="excluded-miles">0</span> mi excluded
+      <div class="mileage-value" id="remaining-miles">—</div>
+      <div class="mileage-unit">miles remaining</div>
+      <div class="mileage-stats" id="mileage-stats" style="display:none">
+        <span class="stat-done"><span id="done-miles">0</span> mi done</span>
+        <span class="stat-sep">·</span>
+        <span class="stat-total"><span id="total-miles">—</span> mi total</span>
       </div>
+      <div class="mileage-excluded" id="excluded-info" style="display:none">
+        <span id="excluded-miles">0</span> mi excluded
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="section-label">Click mode</div>
+    <div class="mode-toggle">
+      <button class="mode-btn done active" id="mode-done-btn">Mark Done</button>
+      <button class="mode-btn exclude" id="mode-exclude-btn">Exclude</button>
     </div>
   </div>
 
@@ -253,10 +298,10 @@
   <div class="sidebar-section">
     <div class="section-label">How to use</div>
     <ul class="instructions">
-      <li data-n="1">Use the polygon tool (toolbar, top-left) to draw your area</li>
+      <li data-n="1">Draw your area with the polygon tool (top-left)</li>
       <li data-n="2">Click <strong style="color:#888">Fetch Roads</strong> to load OSM data</li>
-      <li data-n="3">Click any road to exclude / include it</li>
-      <li data-n="4">Edit your polygon with the edit tool, then re-fetch</li>
+      <li data-n="3">In <strong style="color:#27ae60">Mark Done</strong> mode, click roads you've run</li>
+      <li data-n="4">Switch to <strong style="color:#e05555">Exclude</strong> mode to remove roads from scope</li>
     </ul>
   </div>
 </div>
@@ -284,13 +329,13 @@ const ROAD_TYPES = [
 ];
 
 const TYPE_CONFIG = Object.fromEntries(ROAD_TYPES.map(t => [t.key, t]));
-
 const STORAGE_KEY = 'mtw_state';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
 let drawnPolygon = null;
-let roadsData = [];   // { id, type, name, latlngs, lengthMi, excluded, layer }
+let roadsData = [];   // { id, type, name, latlngs, lengthMi, excluded, done, doneAt, layer }
+let currentMode = 'done'; // 'done' | 'exclude'
 const enabledTypes = new Set(ROAD_TYPES.filter(t => t.defaultOn).map(t => t.key));
 
 // ─── Map ─────────────────────────────────────────────────────────────────────
@@ -362,6 +407,17 @@ function setFetchReady(ready) {
   btn.textContent = ready ? 'Fetch Roads' : 'Draw an area first';
 }
 
+// ─── Mode toggle ─────────────────────────────────────────────────────────────
+
+document.getElementById('mode-done-btn').addEventListener('click', () => setMode('done'));
+document.getElementById('mode-exclude-btn').addEventListener('click', () => setMode('exclude'));
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('mode-done-btn').classList.toggle('active', mode === 'done');
+  document.getElementById('mode-exclude-btn').classList.toggle('active', mode === 'exclude');
+}
+
 // ─── Sidebar: road type checkboxes ───────────────────────────────────────────
 
 const roadTypeList = document.getElementById('road-type-list');
@@ -389,7 +445,7 @@ ROAD_TYPES.forEach(type => {
 
 document.getElementById('fetch-btn').addEventListener('click', () => fetchRoads());
 
-async function fetchRoads(restoredExcludedIds = null) {
+async function fetchRoads(restoredExcludedIds = null, restoredDoneSegments = null) {
   if (!drawnPolygon) return;
 
   const btn = document.getElementById('fetch-btn');
@@ -417,8 +473,11 @@ out geom;`;
     const excludedSet = restoredExcludedIds instanceof Set
       ? restoredExcludedIds
       : new Set(restoredExcludedIds || []);
+    const doneMap = restoredDoneSegments instanceof Map
+      ? restoredDoneSegments
+      : new Map(Object.entries(restoredDoneSegments || {}));
 
-    processRoads(data.elements, excludedSet);
+    processRoads(data.elements, excludedSet, doneMap);
 
     const n = roadsData.length;
     setStatus(`Loaded ${n} segment${n !== 1 ? 's' : ''}.`);
@@ -433,7 +492,7 @@ out geom;`;
 
 // ─── Process roads ───────────────────────────────────────────────────────────
 
-function processRoads(elements, restoredExcludedIds = new Set()) {
+function processRoads(elements, restoredExcludedIds = new Set(), restoredDoneMap = new Map()) {
   roadsLayer.clearLayers();
   roadsData = [];
 
@@ -448,6 +507,9 @@ function processRoads(elements, restoredExcludedIds = new Set()) {
     const lengthMi = turf.length(line, { units: 'miles' });
 
     const excluded = restoredExcludedIds.has(el.id);
+    // doneMap keys are stored as strings (JSON object keys are always strings)
+    const doneAt = restoredDoneMap.get(String(el.id)) || null;
+    const done = !!doneAt;
 
     const layer = L.polyline(latlngs, {
       color: cfg ? cfg.color : '#888',
@@ -455,15 +517,10 @@ function processRoads(elements, restoredExcludedIds = new Set()) {
       opacity: 0.85,
     });
 
-    const name = el.tags?.name || '';
-    layer.bindTooltip(name ? `${name} <em>(${type})</em>` : type, {
-      sticky: true,
-      opacity: 0.9,
-    });
-
-    const road = { id: el.id, type, name, latlngs, lengthMi, excluded, layer };
-    if (excluded) applyRoadStyle(road);
-    layer.on('click', () => toggleRoad(road));
+    const road = { id: el.id, type, name: el.tags?.name || '', latlngs, lengthMi, excluded, done, doneAt, layer };
+    applyRoadStyle(road);
+    bindTooltip(road);
+    layer.on('click', () => handleRoadClick(road));
     roadsData.push(road);
 
     if (enabledTypes.has(type)) roadsLayer.addLayer(layer);
@@ -479,11 +536,17 @@ function clearRoads() {
   updateMileage();
 }
 
-// ─── Toggle exclude ───────────────────────────────────────────────────────────
+// ─── Road interaction ─────────────────────────────────────────────────────────
 
-function toggleRoad(road) {
-  road.excluded = !road.excluded;
+function handleRoadClick(road) {
+  if (currentMode === 'done') {
+    road.done = !road.done;
+    road.doneAt = road.done ? new Date().toISOString() : null;
+  } else {
+    road.excluded = !road.excluded;
+  }
   applyRoadStyle(road);
+  bindTooltip(road);
   updateMileage();
   saveState();
 }
@@ -491,7 +554,9 @@ function toggleRoad(road) {
 function applyRoadStyle(road) {
   const cfg = TYPE_CONFIG[road.type];
   if (road.excluded) {
-    road.layer.setStyle({ color: '#333', opacity: 0.5, dashArray: '5 5', weight: 2 });
+    road.layer.setStyle({ color: '#2a2a2a', opacity: 0.6, dashArray: '5 5', weight: 2 });
+  } else if (road.done) {
+    road.layer.setStyle({ color: '#27ae60', opacity: 0.65, dashArray: null, weight: 3 });
   } else {
     road.layer.setStyle({
       color: cfg ? cfg.color : '#888',
@@ -500,6 +565,20 @@ function applyRoadStyle(road) {
       weight: 3,
     });
   }
+}
+
+function bindTooltip(road) {
+  road.layer.unbindTooltip();
+  const namePart = road.name ? `<strong>${road.name}</strong> ` : '';
+  const typePart = `<em>${road.type}</em>`;
+  const donePart = road.done && road.doneAt
+    ? `<br><span style="color:#27ae60">✓ Done ${formatDate(road.doneAt)}</span>`
+    : '';
+  road.layer.bindTooltip(`${namePart}${typePart}${donePart}`, { sticky: true, opacity: 0.92 });
+}
+
+function formatDate(isoString) {
+  return new Date(isoString).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
 }
 
 // ─── Visibility ───────────────────────────────────────────────────────────────
@@ -516,21 +595,36 @@ function updateRoadVisibility() {
 
 function updateMileage() {
   const typeTotal = {};
-  let included = 0;
+  let done = 0;
+  let remaining = 0;
   let excluded = 0;
 
   roadsData.forEach(road => {
     if (!enabledTypes.has(road.type)) return;
     if (road.excluded) {
       excluded += road.lengthMi;
-    } else {
+    } else if (road.done) {
+      done += road.lengthMi;
       typeTotal[road.type] = (typeTotal[road.type] || 0) + road.lengthMi;
-      included += road.lengthMi;
+    } else {
+      remaining += road.lengthMi;
+      typeTotal[road.type] = (typeTotal[road.type] || 0) + road.lengthMi;
     }
   });
 
-  document.getElementById('total-miles').textContent =
-    included > 0 ? included.toFixed(2) : '—';
+  const total = done + remaining;
+
+  document.getElementById('remaining-miles').textContent =
+    total > 0 ? remaining.toFixed(2) : '—';
+
+  const statsEl = document.getElementById('mileage-stats');
+  if (total > 0) {
+    statsEl.style.display = '';
+    document.getElementById('done-miles').textContent = done.toFixed(2);
+    document.getElementById('total-miles').textContent = total.toFixed(2);
+  } else {
+    statsEl.style.display = 'none';
+  }
 
   const excEl = document.getElementById('excluded-info');
   if (excluded > 0) {
@@ -551,6 +645,11 @@ function updateMileage() {
 // ─── Persistence ─────────────────────────────────────────────────────────────
 
 function saveState() {
+  const doneSegments = {};
+  roadsData.forEach(r => {
+    if (r.done && r.doneAt) doneSegments[r.id] = r.doneAt;
+  });
+
   const state = {
     v: 1,
     polygon: drawnPolygon
@@ -558,6 +657,7 @@ function saveState() {
       : null,
     excludedIds: roadsData.filter(r => r.excluded).map(r => r.id),
     enabledTypes: [...enabledTypes],
+    doneSegments,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -585,7 +685,10 @@ function applyState(state) {
     drawnPolygon = layer;
     map.fitBounds(layer.getBounds(), { padding: [40, 40] });
     setFetchReady(true);
-    fetchRoads(new Set(state.excludedIds || []));
+    fetchRoads(
+      new Set(state.excludedIds || []),
+      state.doneSegments || {},
+    );
   }
 }
 
@@ -619,7 +722,7 @@ document.getElementById('import-input').addEventListener('change', (e) => {
     }
   };
   reader.readAsText(file);
-  e.target.value = ''; // allow re-importing same file
+  e.target.value = '';
 });
 
 // ─── Status helper ────────────────────────────────────────────────────────────

@@ -302,6 +302,7 @@
       <li data-n="2">Click <strong style="color:#888">Fetch Roads</strong> to load OSM data</li>
       <li data-n="3">In <strong style="color:#27ae60">Mark Done</strong> mode, click roads you've run</li>
       <li data-n="4">Switch to <strong style="color:#e05555">Exclude</strong> mode to remove roads from scope</li>
+      <li data-n="f">Press <strong style="color:#888">f</strong> to re-center the map on your area</li>
     </ul>
   </div>
 </div>
@@ -738,6 +739,15 @@ function setStatus(msg, cls = '') {
   el.textContent = msg;
   el.className = cls ? `status ${cls}` : 'status';
 }
+
+// ─── Keyboard shortcuts ───────────────────────────────────────────────────────
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'f' && drawnPolygon) {
+    map.fitBounds(drawnPolygon.getBounds(), { padding: [40, 40] });
+  }
+});
 
 // ─── Init: restore from localStorage ─────────────────────────────────────────
 

@@ -1,0 +1,3 @@
+# map-the-world
+
+`map-the-world` is an interactive browser tool that lets me quickly and easily calculate the total mileage of all the roads within a given area. the purpose of this tool is to help me scope out the effort of running every single street in my neighborhood as a sort of strange pet project. I think this makes sense to do in the browser, and this never needs to go further than localhost - the key thing here is to get the UX right. I think ideally I'd just draw a fence around the area I want to know the total road mileage of, but I imagine I might need to adjust the definition of what is/isn't in scope, so I'd need tooling to easily edit that. first let's figure out the right product there - feel free to push back on any of this!

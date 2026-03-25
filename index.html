@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>map-the-world</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      display: flex;
+      height: 100vh;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f0f1a;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 272px;
+      flex-shrink: 0;
+      background: #13131f;
+      color: #ccc;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      border-right: 1px solid #222;
+    }
+
+    .sidebar-section {
+      padding: 16px;
+      border-bottom: 1px solid #1e1e2e;
+    }
+
+    /* header */
+    .app-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+    .app-subtitle {
+      font-size: 0.7rem;
+      color: #555;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* mileage */
+    .mileage-box {
+      background: #0d0d1a;
+      border: 1px solid #1e2035;
+      border-radius: 8px;
+      padding: 14px 12px 10px;
+      text-align: center;
+    }
+    .mileage-value {
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: #5bc8f5;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .mileage-unit {
+      font-size: 0.75rem;
+      color: #445;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 4px;
+    }
+    .mileage-excluded {
+      font-size: 0.7rem;
+      color: #445;
+      margin-top: 6px;
+    }
+    .mileage-excluded span {
+      color: #666;
+    }
+
+    /* section label */
+    .section-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #444;
+      margin-bottom: 10px;
+    }
+
+    /* road type list */
+    .road-type-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .road-type-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 4px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .road-type-item:hover { background: rgba(255,255,255,0.04); }
+    .road-type-item input[type="checkbox"] {
+      accent-color: #5bc8f5;
+      cursor: pointer;
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+    }
+    .type-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .type-label {
+      font-size: 0.82rem;
+      color: #bbb;
+      flex: 1;
+    }
+    .type-miles {
+      font-size: 0.72rem;
+      color: #555;
+      font-variant-numeric: tabular-nums;
+      min-width: 48px;
+      text-align: right;
+    }
+
+    /* fetch button */
+    #fetch-btn {
+      width: 100%;
+      padding: 10px;
+      background: #5bc8f5;
+      color: #0a0a14;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    #fetch-btn:hover:not(:disabled) { background: #7dd6f8; }
+    #fetch-btn:disabled {
+      background: #1e1e2e;
+      color: #444;
+      cursor: not-allowed;
+    }
+
+    #status {
+      font-size: 0.75rem;
+      color: #556;
+      text-align: center;
+      min-height: 18px;
+      margin-top: 8px;
+    }
+    #status.error { color: #e05555; }
+    #status.loading { color: #5bc8f5; }
+
+    /* instructions */
+    .instructions {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .instructions li {
+      font-size: 0.78rem;
+      color: #445;
+      display: flex;
+      gap: 8px;
+      line-height: 1.4;
+    }
+    .instructions li::before {
+      content: attr(data-n);
+      color: #333;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    /* ── Map ── */
+    #map {
+      flex: 1;
+    }
+
+    /* Leaflet draw toolbar tweak */
+    .leaflet-draw-toolbar a {
+      background-color: #13131f !important;
+      color: #ccc !important;
+    }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="sidebar-section">
+    <div class="app-title">map-the-world</div>
+    <div class="app-subtitle">road mileage calculator</div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="mileage-box">
+      <div class="mileage-value" id="total-miles">—</div>
+      <div class="mileage-unit">total miles</div>
+      <div class="mileage-excluded" id="excluded-info" style="display:none">
+        + <span id="excluded-miles">0</span> mi excluded
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-section" style="flex:1">
+    <div class="section-label">Road Types</div>
+    <div class="road-type-list" id="road-type-list"></div>
+  </div>
+
+  <div class="sidebar-section">
+    <button id="fetch-btn" disabled>Draw an area first</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="section-label">How to use</div>
+    <ul class="instructions">
+      <li data-n="1">Use the polygon tool (toolbar, top-left) to draw your area</li>
+      <li data-n="2">Click <strong style="color:#888">Fetch Roads</strong> to load OSM data</li>
+      <li data-n="3">Click any road to exclude / include it</li>
+      <li data-n="4">Edit your polygon with the edit tool, then re-fetch</li>
+    </ul>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+<script>
+// ─── Road type config ────────────────────────────────────────────────────────
+
+const ROAD_TYPES = [
+  { key: 'primary',       label: 'Primary',         defaultOn: true,  color: '#f0932b' },
+  { key: 'secondary',     label: 'Secondary',        defaultOn: true,  color: '#f9ca24' },
+  { key: 'tertiary',      label: 'Tertiary',         defaultOn: true,  color: '#6ab04c' },
+  { key: 'unclassified',  label: 'Unclassified',     defaultOn: true,  color: '#22a6b3' },
+  { key: 'residential',   label: 'Residential',      defaultOn: true,  color: '#4a9eda' },
+  { key: 'living_street', label: 'Living street',    defaultOn: true,  color: '#a29bfe' },
+  { key: 'service',       label: 'Service / alley',  defaultOn: false, color: '#636e72' },
+  { key: 'pedestrian',    label: 'Pedestrian',       defaultOn: false, color: '#fd79a8' },
+  { key: 'footway',       label: 'Footway',          defaultOn: false, color: '#e17055' },
+  { key: 'cycleway',      label: 'Cycleway',         defaultOn: false, color: '#00b894' },
+  { key: 'path',          label: 'Path / track',     defaultOn: false, color: '#b2bec3' },
+];
+
+const TYPE_CONFIG = Object.fromEntries(ROAD_TYPES.map(t => [t.key, t]));
+
+// ─── State ───────────────────────────────────────────────────────────────────
+
+let drawnPolygon = null;
+let roadsData = [];   // { id, type, name, latlngs, lengthMi, excluded, layer }
+const enabledTypes = new Set(ROAD_TYPES.filter(t => t.defaultOn).map(t => t.key));
+
+// ─── Map ─────────────────────────────────────────────────────────────────────
+
+const map = L.map('map').setView([42.3601, -71.0589], 14);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  maxZoom: 19,
+}).addTo(map);
+
+const drawnItems = new L.FeatureGroup().addTo(map);
+const roadsLayer = new L.FeatureGroup().addTo(map);
+
+const drawControl = new L.Control.Draw({
+  draw: {
+    polygon: {
+      allowIntersection: false,
+      shapeOptions: { color: '#5bc8f5', weight: 2, fillOpacity: 0.07 },
+    },
+    polyline:     false,
+    rectangle:    false,
+    circle:       false,
+    circlemarker: false,
+    marker:       false,
+  },
+  edit: { featureGroup: drawnItems },
+});
+map.addControl(drawControl);
+
+// ─── Draw events ─────────────────────────────────────────────────────────────
+
+map.on(L.Draw.Event.CREATED, (e) => {
+  drawnItems.clearLayers();
+  drawnItems.addLayer(e.layer);
+  drawnPolygon = e.layer;
+  setFetchReady(true);
+});
+
+map.on(L.Draw.Event.EDITED, (e) => {
+  e.layers.eachLayer(layer => { drawnPolygon = layer; });
+  setStatus('Polygon updated — re-fetch to reload roads.');
+});
+
+map.on(L.Draw.Event.DELETED, () => {
+  drawnPolygon = null;
+  setFetchReady(false);
+  clearRoads();
+  setStatus('');
+});
+
+function setFetchReady(ready) {
+  const btn = document.getElementById('fetch-btn');
+  btn.disabled = !ready;
+  btn.textContent = ready ? 'Fetch Roads' : 'Draw an area first';
+}
+
+// ─── Sidebar: road type checkboxes ───────────────────────────────────────────
+
+const roadTypeList = document.getElementById('road-type-list');
+
+ROAD_TYPES.forEach(type => {
+  const label = document.createElement('label');
+  label.className = 'road-type-item';
+  label.innerHTML = `
+    <input type="checkbox" value="${type.key}" ${type.defaultOn ? 'checked' : ''}>
+    <span class="type-dot" style="background:${type.color}"></span>
+    <span class="type-label">${type.label}</span>
+    <span class="type-miles" id="miles-${type.key}"></span>
+  `;
+  label.querySelector('input').addEventListener('change', (e) => {
+    if (e.target.checked) enabledTypes.add(type.key);
+    else enabledTypes.delete(type.key);
+    updateRoadVisibility();
+    updateMileage();
+  });
+  roadTypeList.appendChild(label);
+});
+
+// ─── Fetch ───────────────────────────────────────────────────────────────────
+
+document.getElementById('fetch-btn').addEventListener('click', fetchRoads);
+
+async function fetchRoads() {
+  if (!drawnPolygon) return;
+
+  const btn = document.getElementById('fetch-btn');
+  btn.disabled = true;
+  btn.textContent = 'Fetching…';
+  setStatus('Querying Overpass API…', 'loading');
+  clearRoads();
+
+  try {
+    const latlngs = drawnPolygon.getLatLngs()[0];
+    const polyStr = latlngs.map(ll => `${ll.lat} ${ll.lng}`).join(' ');
+
+    const query = `[out:json][timeout:90];
+way["highway"~"^(primary|secondary|tertiary|unclassified|residential|living_street|service|pedestrian|footway|cycleway|path|track)$"](poly:"${polyStr}");
+out geom;`;
+
+    const resp = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: query,
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    processRoads(data.elements);
+
+    const n = roadsData.length;
+    setStatus(`Loaded ${n} segment${n !== 1 ? 's' : ''}.`);
+    btn.textContent = 'Re-fetch Roads';
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, 'error');
+    btn.textContent = 'Fetch Roads';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ─── Process roads ───────────────────────────────────────────────────────────
+
+function processRoads(elements) {
+  roadsLayer.clearLayers();
+  roadsData = [];
+
+  elements.forEach(el => {
+    if (!el.geometry || el.geometry.length < 2) return;
+    const type = el.tags?.highway;
+    if (!type) return;
+
+    const cfg = TYPE_CONFIG[type];
+    const latlngs = el.geometry.map(p => [p.lat, p.lon]);
+    const line = turf.lineString(el.geometry.map(p => [p.lon, p.lat]));
+    const lengthMi = turf.length(line, { units: 'miles' });
+
+    const layer = L.polyline(latlngs, {
+      color: cfg ? cfg.color : '#888',
+      weight: 3,
+      opacity: 0.85,
+    });
+
+    const name = el.tags?.name || '';
+    layer.bindTooltip(name ? `${name} <em>(${type})</em>` : type, {
+      sticky: true,
+      opacity: 0.9,
+    });
+
+    const road = { id: el.id, type, name, latlngs, lengthMi, excluded: false, layer };
+    layer.on('click', () => toggleRoad(road));
+    road.layer = layer;
+    roadsData.push(road);
+
+    if (enabledTypes.has(type)) roadsLayer.addLayer(layer);
+  });
+
+  updateMileage();
+}
+
+function clearRoads() {
+  roadsLayer.clearLayers();
+  roadsData = [];
+  updateMileage();
+}
+
+// ─── Toggle exclude ───────────────────────────────────────────────────────────
+
+function toggleRoad(road) {
+  road.excluded = !road.excluded;
+  applyRoadStyle(road);
+  updateMileage();
+}
+
+function applyRoadStyle(road) {
+  const cfg = TYPE_CONFIG[road.type];
+  if (road.excluded) {
+    road.layer.setStyle({ color: '#333', opacity: 0.5, dashArray: '5 5', weight: 2 });
+  } else {
+    road.layer.setStyle({
+      color: cfg ? cfg.color : '#888',
+      opacity: 0.85,
+      dashArray: null,
+      weight: 3,
+    });
+  }
+}
+
+// ─── Visibility ───────────────────────────────────────────────────────────────
+
+function updateRoadVisibility() {
+  roadsData.forEach(road => {
+    const visible = enabledTypes.has(road.type);
+    if (visible && !roadsLayer.hasLayer(road.layer)) roadsLayer.addLayer(road.layer);
+    if (!visible && roadsLayer.hasLayer(road.layer)) roadsLayer.removeLayer(road.layer);
+  });
+}
+
+// ─── Mileage ─────────────────────────────────────────────────────────────────
+
+function updateMileage() {
+  const typeTotal = {};
+  let included = 0;
+  let excluded = 0;
+
+  roadsData.forEach(road => {
+    if (!enabledTypes.has(road.type)) return;
+    if (road.excluded) {
+      excluded += road.lengthMi;
+    } else {
+      typeTotal[road.type] = (typeTotal[road.type] || 0) + road.lengthMi;
+      included += road.lengthMi;
+    }
+  });
+
+  document.getElementById('total-miles').textContent =
+    included > 0 ? included.toFixed(2) : '—';
+
+  const excEl = document.getElementById('excluded-info');
+  if (excluded > 0) {
+    excEl.style.display = '';
+    document.getElementById('excluded-miles').textContent = excluded.toFixed(2);
+  } else {
+    excEl.style.display = 'none';
+  }
+
+  ROAD_TYPES.forEach(t => {
+    const el = document.getElementById(`miles-${t.key}`);
+    if (!el) return;
+    const mi = typeTotal[t.key] || 0;
+    el.textContent = mi > 0 ? `${mi.toFixed(1)} mi` : '';
+  });
+}
+
+// ─── Status helper ────────────────────────────────────────────────────────────
+
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = cls ? `status ${cls}` : 'status';
+}
+</script>
+</body>
+</html>
